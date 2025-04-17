@@ -1,0 +1,11 @@
+{
+  "name": "Sentry DevTools Sourcemap Provider",
+  "description": "An extension to fill your devtools in production with sourcemaps you uploaded to Sentry",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage"],
+  "devtools_page": "devtools.html"
+}
