@@ -6,6 +6,9 @@
   "action": {
     "default_popup": "popup.html"
   },
+  "icons": {
+    "48": "sentry-icon-48.png"
+  },
   "permissions": ["storage", "tabs"],
   "host_permissions": ["https://sentry.io/*"],
   "devtools_page": "devtools.html"
