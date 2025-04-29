@@ -273,13 +273,15 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(
         sourceMapStringContent.length
       );
 
-      const base64 = btoa(sourceMapStringContent);
+      // This looks abysmal but not doing the encode unescape dance results in errors where certain characters are out of base64 range
+      const base64 = btoa(unescape(encodeURIComponent(sourceMapStringContent)));
       const dataUrl = `data:application/json;base64,${base64}`;
       console.log("[attachSourceMapURL] Attaching source map for", url, {
         dataUrl,
         sourceMapStringContent,
       });
-      (resource as any).attachSourceMapURL?.(url, dataUrl);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (resource as any).attachSourceMapURL(dataUrl);
       console.log("[attachSourceMapURL] Done attaching source map.");
     } catch (err) {
       console.error("[onResourceAdded] Error in source map flow:", err);
