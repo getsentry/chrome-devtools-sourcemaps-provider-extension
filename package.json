@@ -5,10 +5,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "build": "vite build"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.74.4",
