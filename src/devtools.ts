@@ -95,13 +95,14 @@ loadConfig().then(() => {
 // Listen for resources being added to the page
 chrome.devtools.inspectedWindow.onResourceAdded.addListener(
   async (resource) => {
-    console.log("[onResourceAdded] New resource detected:", {
-      url: resource.url,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type: (resource as any).type,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      buildId: (resource as any).buildId,
-    });
+    const tab = await chrome.tabs.get(chrome.devtools.inspectedWindow.tabId);
+
+    if (!tab || !tab.url) {
+      console.log("[onResourceAdded] Tab not found");
+      return;
+    }
+
+    console.log("[onResourceAdded] New resource detected:", resource);
 
     const currentConfig = await loadConfig();
     if (!currentConfig.sentryAuthToken) {
@@ -115,16 +116,49 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(
       return;
     }
 
-    const url = resource.url;
-    const resourceBuildId = (resource as any).buildId as string | undefined;
-    const matchingConfigs = findMatchingConfigs(url);
+    const matchingConfigs = findMatchingConfigs(tab.url);
 
     if (matchingConfigs.length === 0) {
-      console.log("[onResourceAdded] No project config matches URL:", url);
+      console.log("[onResourceAdded] No project config matches URL:", tab.url);
       return;
     }
+
+    const url = resource.url;
+    const resourceBuildId =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((resource as any).buildId as string | undefined) ??
+      (await new Promise((resolve) => {
+        resource.getContent((content, encoding) => {
+          if (!content) {
+            return resolve(undefined);
+          }
+
+          const decodedContent = encoding ? atob(content) : content;
+
+          const sentryMagicExpression = decodedContent.match(
+            /sentry-dbid-([0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12})/
+          );
+
+          if (sentryMagicExpression) {
+            return resolve(sentryMagicExpression[1]);
+          }
+
+          const debugIdMagicComment = decodedContent.match(
+            /^\s*\/\/#\s?debugId=(.*)$/m
+          );
+
+          if (debugIdMagicComment) {
+            return resolve(debugIdMagicComment[1]);
+          }
+
+          return resolve(undefined);
+        });
+      }));
+
     if (!resourceBuildId) {
-      console.log("[onResourceAdded] No buildId on resource, skipping lookup.");
+      console.log(
+        `[onResourceAdded] No buildId on resource "${url}", skipping lookup.`
+      );
       return;
     }
 
@@ -141,9 +175,7 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(
         Authorization: `Bearer ${currentConfig.sentryAuthToken}`,
       };
 
-      const lookupUrl =
-        `https://sentry.io/api/0/projects/${orgSlug}/${projectSlug}` +
-        ` /artifact-lookup/?debug_id=${resourceBuildId}`;
+      const lookupUrl = `https://sentry.io/api/0/projects/${orgSlug}/${projectSlug}/artifact-lookup/?debug_id=${resourceBuildId}`;
       console.log("[fetch] Artifact lookup URL:", lookupUrl);
 
       const artifactLookupResponse = await fetch(lookupUrl, { headers });
@@ -215,7 +247,7 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(
 
       const zipPathForSourcemap = Object.entries(manifest.files).find(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        ([_path, info]) =>
+        ([path, info]) =>
           info.type === "source_map" &&
           info.headers["debug-id"] === resourceBuildId
       )?.[0];
@@ -241,9 +273,12 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(
         sourceMapStringContent.length
       );
 
-      const base64 = btoa(unescape(encodeURIComponent(sourceMapStringContent)));
+      const base64 = btoa(sourceMapStringContent);
       const dataUrl = `data:application/json;base64,${base64}`;
-      console.log("[attachSourceMapURL] Attaching source map for", url);
+      console.log("[attachSourceMapURL] Attaching source map for", url, {
+        dataUrl,
+        sourceMapStringContent,
+      });
       (resource as any).attachSourceMapURL?.(url, dataUrl);
       console.log("[attachSourceMapURL] Done attaching source map.");
     } catch (err) {
